@@ -1,6 +1,6 @@
 ARG OSVERSION
 ARG ARCH=amd64
-FROM mcr.microsoft.com/windows/servercore:${OSVERSION]} as core
+FROM mcr.microsoft.com/windows/servercore:${OSVERSION} as core
 
 FROM mcr.microsoft.com/windows/nanoserver:${OSVERSION}
 LABEL description="CSI SMB plugin"
