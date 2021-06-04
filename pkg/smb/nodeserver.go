@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -65,11 +64,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
 	}
 
-	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
-		return nil, status.Errorf(codes.Aborted, volumeOperationAlreadyExistsFmt, volumeID)
-	}
-	defer d.volumeLocks.Release(volumeID)
-
 	mountOptions := []string{"bind"}
 	if req.GetReadonly() {
 		mountOptions = append(mountOptions, "ro")
@@ -86,27 +80,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	if err = preparePublishPath(target, d.mounter); err != nil {
 		return nil, fmt.Errorf("prepare publish failed for %s with error: %v", target, err)
-	}
-
-	context := req.GetVolumeContext()
-	var createSubDir string
-	for k, v := range context {
-		switch strings.ToLower(k) {
-		case createSubDirField:
-			createSubDir = v
-		}
-	}
-
-	if strings.EqualFold(createSubDir, "true") {
-		source = filepath.Join(source, req.GetVolumeId())
-		klog.V(2).Infof("NodePublishVolume: createSubDir(%s) MkdirAll(%s) volumeID(%s)", createSubDir, source, volumeID)
-		if err := Mkdir(d.mounter, source, 0750); err != nil {
-			if os.IsExist(err) {
-				klog.Warningf("Mkdir(%s) failed with error: %v", source, err)
-			} else {
-				return nil, status.Errorf(codes.Internal, "Mkdir(%s) failed with error: %v", source, err)
-			}
-		}
 	}
 
 	klog.V(2).Infof("NodePublishVolume: mounting %s at %s with mountOptions: %v volumeID(%s)", source, target, mountOptions, volumeID)
@@ -130,13 +103,9 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	if len(targetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
-	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
-		return nil, status.Errorf(codes.Aborted, volumeOperationAlreadyExistsFmt, volumeID)
-	}
-	defer d.volumeLocks.Release(volumeID)
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s", volumeID, targetPath)
-	err := CleanupMountPoint(d.mounter, targetPath, false)
+	err := CleanupSMBMountPoint(d.mounter, targetPath, false)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to unmount target %q: %v", targetPath, err)
 	}

@@ -21,10 +21,13 @@ metadata:
 provisioner: smb.csi.k8s.io
 parameters:
   source: "//smb-server.default.svc.cluster.local/share"
+  # if csi.storage.k8s.io/provisioner-secret is provided, will create a sub directory
+  # with PV name under source
+  csi.storage.k8s.io/provisioner-secret-name: "smbcreds"
+  csi.storage.k8s.io/provisioner-secret-namespace: "default"
   csi.storage.k8s.io/node-stage-secret-name: "smbcreds"
   csi.storage.k8s.io/node-stage-secret-namespace: "default"
-  createSubDir: "false"  # optional: create a sub dir for new volume
-reclaimPolicy: Retain  # only retain is supported
+reclaimPolicy: Delete  # available values: Delete, Retain
 volumeBindingMode: Immediate
 mountOptions:
   - dir_mode=0777
@@ -47,11 +50,14 @@ metadata:
   name: smb
 provisioner: smb.csi.k8s.io
 parameters:
-  source: \\52.146.58.223\share
+  source: //52.146.58.223/share
+  # if csi.storage.k8s.io/provisioner-secret is provided, will create a sub directory
+  # with PV name under source
+  csi.storage.k8s.io/provisioner-secret-name: "smbcreds"
+  csi.storage.k8s.io/provisioner-secret-namespace: "default"
   csi.storage.k8s.io/node-stage-secret-name: "smbcreds"
   csi.storage.k8s.io/node-stage-secret-namespace: "default"
-  createSubDir: "false"  # optional: create a sub dir for new volume
-reclaimPolicy: Retain  # only retain is supported
+reclaimPolicy: Delete  # available values: Delete, Retain
 volumeBindingMode: Immediate
 mountOptions:
   - dir_mode=0777
@@ -64,14 +70,15 @@ kubectl create -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-sm
 ```
  - Execute `df -h` command in the container
 ```console
-# k exec -it statefulset-smb2-0 sh
-# df -h
+kubectl exec -it statefulset-smb-0 sh -- df -h
+```
+<pre>
 Filesystem                                    Size  Used Avail Use% Mounted on
 ...
 //smb-server.default.svc.cluster.local/share  124G   23G  102G  19% /mnt/smb
 /dev/sda1                                     124G   15G  110G  12% /etc/hosts
 ...
-```
+</pre>
 
 ### Option#2: PV/PVC Usage
 #### 1. Create PV/PVC bound with SMB share
@@ -124,14 +131,16 @@ kubectl create -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-sm
 
  - Execute `df -h` command in the container
 ```console
-$ kubectl exec -it nginx-smb -- sh
-# df -h
+kubectl exec -it nginx-smb -- df -h
+```
+<pre>
 Filesystem            Size  Used Avail Use% Mounted on
 ...
 /dev/sda1              97G   21G   77G  22% /etc/hosts
 //20.43.191.64/share   97G   21G   77G  22% /mnt/smb
 ...
-```
+</pre>
+
 In the above example, there is a `/mnt/smb` directory mounted as cifs filesystem.
 
 ### 2.2 Create a deployment on Windows

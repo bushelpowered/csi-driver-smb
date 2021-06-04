@@ -17,7 +17,8 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= andyzhangx
 REGISTRY_NAME = $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 IMAGE_NAME ?= smb-csi
-IMAGE_VERSION ?= v0.7.0
+IMAGE_VERSION ?= v1.1.0
+VERSION ?= latest
 # Use a custom version for E2E tests if we are testing in CI
 ifdef CI
 ifndef PUBLISH
@@ -95,7 +96,7 @@ e2e-test:
 e2e-bootstrap: install-helm
 	docker pull $(IMAGE_TAG) || make container-all push-manifest
 ifdef TEST_WINDOWS
-	helm install csi-driver-smb charts/latest/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	helm upgrade csi-driver-smb charts/$(VERSION)/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug --install \
 		${E2E_HELM_OPTIONS} \
 		--set windows.enabled=true \
 		--set linux.enabled=false \
@@ -103,7 +104,7 @@ ifdef TEST_WINDOWS
 		--set controller.logLevel=6 \
 		--set node.logLevel=6
 else
-	helm install csi-driver-smb charts/latest/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	helm upgrade csi-driver-smb charts/$(VERSION)/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug --install \
 		${E2E_HELM_OPTIONS}
 endif
 
@@ -196,11 +197,11 @@ install-smb-provisioner:
 	kubectl delete secret smbcreds --ignore-not-found
 	kubectl create secret generic smbcreds --from-literal username=USERNAME --from-literal password="PASSWORD"
 ifdef TEST_WINDOWS
-	kubectl create -f deploy/example/smb-provisioner/smb-server-lb.yaml
+	kubectl apply -f deploy/example/smb-provisioner/smb-server-lb.yaml
 else
-	kubectl create -f deploy/example/smb-provisioner/smb-server.yaml
+	kubectl apply -f deploy/example/smb-provisioner/smb-server.yaml
 endif
 
 .PHONY: create-metrics-svc
 create-metrics-svc:
-	kubectl create -f deploy/example/metrics/csi-smb-controller-svc.yaml
+	kubectl apply -f deploy/example/metrics/csi-smb-controller-svc.yaml

@@ -62,6 +62,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 
 	testDriver = driver.InitSMBDriver()
 	ginkgo.It("should create a volume after driver restart [smb.csi.k8s.io]", func() {
+		ginkgo.Skip("test case is disabled since node logs would be lost after driver restart")
 		pod := testsuites.PodDetails{
 			Cmd: convertToPowershellCommandIfNecessary("echo 'hello world' >> /mnt/test-1/data && while true; do sleep 3600; done"),
 			Volumes: []testsuites.VolumeDetails{
@@ -89,7 +90,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 				Cmd:            podCheckCmd,
 				ExpectedString: expectedString,
 			},
-			StorageClassParameters: storageClassCreateSubDir,
+			StorageClassParameters: defaultStorageClassParameters,
 			RestartDriverFunc: func() {
 				restartDriver := testCmd{
 					command:  "bash",
@@ -208,7 +209,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 			CSIDriver:              testDriver,
 			Pods:                   pods,
 			ColocatePods:           true,
-			StorageClassParameters: storageClassCreateSubDir,
+			StorageClassParameters: defaultStorageClassParameters,
 		}
 		test.Run(cs, ns)
 	})
@@ -269,7 +270,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 				Cmd:            podCheckCmd,
 				ExpectedString: expectedString, // pod will be restarted so expect to see 2 instances of string
 			},
-			StorageClassParameters: storageClassCreateSubDir,
+			StorageClassParameters: defaultStorageClassParameters,
 		}
 		test.Run(cs, ns)
 	})
@@ -330,7 +331,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 		test := testsuites.DynamicallyProvisionedPodWithMultiplePVsTest{
 			CSIDriver:              testDriver,
 			Pods:                   pods,
-			StorageClassParameters: storageClassCreateSubDir,
+			StorageClassParameters: defaultStorageClassParameters,
 		}
 		test.Run(cs, ns)
 	})
@@ -354,7 +355,7 @@ var _ = ginkgo.Describe("Dynamic Provisioning", func() {
 		test := testsuites.DynamicallyProvisionedVolumeSubpathTester{
 			CSIDriver:              testDriver,
 			Pods:                   pods,
-			StorageClassParameters: storageClassCreateSubDir,
+			StorageClassParameters: defaultStorageClassParameters,
 		}
 		test.Run(cs, ns)
 	})
