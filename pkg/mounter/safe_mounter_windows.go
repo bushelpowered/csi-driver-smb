@@ -21,15 +21,16 @@ package mounter
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	filepath "path/filepath"
 	"strings"
 
-	fs "github.com/kubernetes-csi/csi-proxy/client/api/filesystem/v1beta1"
-	fsclient "github.com/kubernetes-csi/csi-proxy/client/groups/filesystem/v1beta1"
+	fs "github.com/kubernetes-csi/csi-proxy/client/api/filesystem/v1"
+	fsclient "github.com/kubernetes-csi/csi-proxy/client/groups/filesystem/v1"
 
-	smb "github.com/kubernetes-csi/csi-proxy/client/api/smb/v1beta1"
-	smbclient "github.com/kubernetes-csi/csi-proxy/client/groups/smb/v1beta1"
+	smb "github.com/kubernetes-csi/csi-proxy/client/api/smb/v1"
+	smbclient "github.com/kubernetes-csi/csi-proxy/client/groups/smb/v1"
 
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
@@ -71,6 +72,19 @@ func (mounter *CSIProxyMounter) SMBMount(source, target, fsType string, mountOpt
 		}
 	}
 
+	parts := strings.FieldsFunc(source, Split)
+	if len(parts) > 0 && strings.HasSuffix(parts[0], "svc.cluster.local") {
+		// replace hostname with IP in the source
+		domainName := parts[0]
+		ip, err := net.ResolveIPAddr("ip4", domainName)
+		if err != nil {
+			klog.Warningf("could not resolve name to IPv4 address for host %s, failed with error: %v", domainName, err)
+		} else {
+			klog.V(2).Infof("resolve the name of host %s to IPv4 address: %s", domainName, ip.String())
+			source = strings.Replace(source, domainName, ip.String(), 1)
+		}
+	}
+
 	source = strings.Replace(source, "/", "\\", -1)
 	smbMountRequest := &smb.NewSmbGlobalMappingRequest{
 		LocalPath:  normalizeWindowsPath(target),
@@ -96,15 +110,19 @@ func (mounter *CSIProxyMounter) Mount(source string, target string, fstype strin
 	klog.V(4).Infof("Mount: old name: %s. new name: %s", source, target)
 	// Mount is called after the format is done.
 	// TODO: Confirm that fstype is empty.
-	linkRequest := &fs.LinkPathRequest{
+	linkRequest := &fs.CreateSymlinkRequest{
 		SourcePath: normalizeWindowsPath(source),
 		TargetPath: normalizeWindowsPath(target),
 	}
-	_, err := mounter.FsClient.LinkPath(context.Background(), linkRequest)
+	_, err := mounter.FsClient.CreateSymlink(context.Background(), linkRequest)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func Split(r rune) bool {
+	return r == ' ' || r == '/'
 }
 
 // Rmdir - delete the given directory
@@ -114,9 +132,8 @@ func (mounter *CSIProxyMounter) Mount(source string, target string, fstype strin
 func (mounter *CSIProxyMounter) Rmdir(path string) error {
 	klog.V(4).Infof("Remove directory: %s", path)
 	rmdirRequest := &fs.RmdirRequest{
-		Path:    normalizeWindowsPath(path),
-		Context: fs.PathContext_POD,
-		Force:   true,
+		Path:  normalizeWindowsPath(path),
+		Force: true,
 	}
 	_, err := mounter.FsClient.Rmdir(context.Background(), rmdirRequest)
 	if err != nil {
@@ -152,14 +169,14 @@ func (mounter *CSIProxyMounter) IsLikelyNotMountPoint(path string) (bool, error)
 		return true, os.ErrNotExist
 	}
 
-	response, err := mounter.FsClient.IsMountPoint(context.Background(),
-		&fs.IsMountPointRequest{
+	response, err := mounter.FsClient.IsSymlink(context.Background(),
+		&fs.IsSymlinkRequest{
 			Path: normalizeWindowsPath(path),
 		})
 	if err != nil {
 		return false, err
 	}
-	return !response.IsMountPoint, nil
+	return !response.IsSymlink, nil
 }
 
 func (mounter *CSIProxyMounter) PathIsDevice(pathname string) (bool, error) {
@@ -188,8 +205,7 @@ func (mounter *CSIProxyMounter) MakeFile(pathname string) error {
 func (mounter *CSIProxyMounter) MakeDir(path string) error {
 	klog.V(4).Infof("Make directory: %s", path)
 	mkdirReq := &fs.MkdirRequest{
-		Path:    normalizeWindowsPath(path),
-		Context: fs.PathContext_PLUGIN,
+		Path: normalizeWindowsPath(path),
 	}
 	_, err := mounter.FsClient.Mkdir(context.Background(), mkdirReq)
 	if err != nil {
@@ -210,6 +226,15 @@ func (mounter *CSIProxyMounter) ExistsPath(path string) (bool, error) {
 		return false, err
 	}
 	return isExistsResponse.Exists, err
+}
+
+// GetAPIVersions returns the versions of the client APIs this mounter is using.
+func (mounter *CSIProxyMounter) GetAPIVersions() string {
+	return fmt.Sprintf(
+		"API Versions filesystem: %s, SMB: %s",
+		fsclient.Version,
+		smbclient.Version,
+	)
 }
 
 func (mounter *CSIProxyMounter) EvalHostSymlinks(pathname string) (string, error) {
@@ -260,11 +285,24 @@ func NewCSIProxyMounter() (*CSIProxyMounter, error) {
 
 func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
 	csiProxyMounter, err := NewCSIProxyMounter()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		klog.V(2).Infof("using CSIProxyMounterV1, %s", csiProxyMounter.GetAPIVersions())
+		return &mount.SafeFormatAndMount{
+			Interface: csiProxyMounter,
+			Exec:      utilexec.New(),
+		}, nil
 	}
-	return &mount.SafeFormatAndMount{
-		Interface: csiProxyMounter,
-		Exec:      utilexec.New(),
-	}, nil
+
+	klog.V(2).Infof("failed to connect to csi-proxy v1 with error: %v, will try with v1Beta", err)
+	csiProxyMounterV1Beta, err := NewCSIProxyMounterV1Beta()
+	if err == nil {
+		klog.V(2).Infof("using CSIProxyMounterV1beta, %s", csiProxyMounterV1Beta.GetAPIVersions())
+		return &mount.SafeFormatAndMount{
+			Interface: csiProxyMounterV1Beta,
+			Exec:      utilexec.New(),
+		}, nil
+	}
+
+	klog.Errorf("failed to connect to csi-proxy v1beta with error: %v", err)
+	return nil, err
 }

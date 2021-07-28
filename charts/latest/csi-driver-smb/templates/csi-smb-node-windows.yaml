@@ -2,22 +2,22 @@
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
-  name: csi-smb-node-win
+  name: {{ .Values.windows.dsName }}
   namespace: {{ .Release.Namespace }}
 {{ include "smb.labels" . | indent 2 }}
 spec:
   selector:
     matchLabels:
-      app: csi-smb-node-win
+      app: {{ .Values.windows.dsName }}
   template:
     metadata:
 {{ include "smb.labels" . | indent 6 }}
-        app: csi-smb-node-win
+        app: {{ .Values.windows.dsName }}
     spec:
+{{- with .Values.windows.tolerations }}
       tolerations:
-        - key: "node.kubernetes.io/os"
-          operator: "Exists"
-          effect: "NoSchedule"
+{{ toYaml . | indent 8 }}
+{{- end }}
       nodeSelector:
         kubernetes.io/os: windows
       priorityClassName: system-node-critical
@@ -31,7 +31,7 @@ spec:
           args:
             - --csi-address=$(CSI_ENDPOINT)
             - --probe-timeout=3s
-            - --health-port=29643
+            - --health-port={{ .Values.node.livenessProbe.healthPort }}
             - --v=2
           env:
             - name: CSI_ENDPOINT
@@ -80,11 +80,8 @@ spec:
             - --nodeid=$(KUBE_NODE_NAME)
             - "--metrics-address=0.0.0.0:{{ .Values.node.metricsPort }}"
           ports:
-            - containerPort: 29643
+            - containerPort: {{ .Values.node.livenessProbe.healthPort }}
               name: healthz
-              protocol: TCP
-            - containerPort: {{ .Values.node.metricsPort }}
-              name: metrics
               protocol: TCP
           livenessProbe:
             failureThreshold: 5
@@ -107,9 +104,15 @@ spec:
               mountPath: {{ .Values.windows.kubelet }}\
             - name: plugin-dir
               mountPath: C:\csi
-            - name: csi-proxy-fs-pipe
+            - name: csi-proxy-fs-pipe-v1
+              mountPath: \\.\pipe\csi-proxy-filesystem-v1
+            - name: csi-proxy-smb-pipe-v1
+              mountPath: \\.\pipe\csi-proxy-smb-v1
+            # these paths are still included for compatibility, they're used
+            # only if the node has still the beta version of the CSI proxy
+            - name: csi-proxy-fs-pipe-v1beta1
               mountPath: \\.\pipe\csi-proxy-filesystem-v1beta1
-            - name: csi-proxy-smb-pipe
+            - name: csi-proxy-smb-pipe-v1beta1
               mountPath: \\.\pipe\csi-proxy-smb-v1beta1
           resources:
             limits:
@@ -119,11 +122,21 @@ spec:
               cpu: 10m
               memory: 20Mi
       volumes:
-        - name: csi-proxy-fs-pipe
+        - name: csi-proxy-fs-pipe-v1
+          hostPath:
+            path: \\.\pipe\csi-proxy-filesystem-v1
+            type: ""
+        - name: csi-proxy-smb-pipe-v1
+          hostPath:
+            path: \\.\pipe\csi-proxy-smb-v1
+            type: ""
+        # these paths are still included for compatibility, they're used
+        # only if the node has still the beta version of the CSI proxy
+        - name: csi-proxy-fs-pipe-v1beta1
           hostPath:
             path: \\.\pipe\csi-proxy-filesystem-v1beta1
             type: ""
-        - name: csi-proxy-smb-pipe
+        - name: csi-proxy-smb-pipe-v1beta1
           hostPath:
             path: \\.\pipe\csi-proxy-smb-v1beta1
             type: ""

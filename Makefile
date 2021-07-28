@@ -17,7 +17,7 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= andyzhangx
 REGISTRY_NAME = $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 IMAGE_NAME ?= smb-csi
-IMAGE_VERSION ?= v1.1.0
+IMAGE_VERSION ?= v1.3.0
 VERSION ?= latest
 # Use a custom version for E2E tests if we are testing in CI
 ifdef CI
@@ -30,6 +30,7 @@ IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS ?= "-X ${PKG}/pkg/smb.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/smb.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/smb.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
 E2E_HELM_OPTIONS ?= --set image.smb.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.smb.tag=$(IMAGE_VERSION)
+E2E_HELM_OPTIONS += ${EXTRA_HELM_OPTIONS}
 GINKGO_FLAGS = -ginkgo.v
 GO111MODULE = on
 GOPATH ?= $(shell go env GOPATH)
@@ -164,18 +165,24 @@ push-manifest:
 	docker manifest create --amend $(IMAGE_TAG) $(foreach osarch, $(ALL_OS_ARCH), $(IMAGE_TAG)-${osarch})
 	# add "os.version" field to windows images (based on https://github.com/kubernetes/kubernetes/blob/master/build/pause/Makefile)
 	set -x; \
-	registry_prefix=$(shell (echo ${REGISTRY} | grep -Eq ".*\/.*") && echo "docker.io/" || echo ""); \
-	manifest_image_folder=`echo "$${registry_prefix}${IMAGE_TAG}" | sed "s|/|_|g" | sed "s/:/-/"`; \
 	for arch in $(ALL_ARCH.windows); do \
 		for osversion in $(ALL_OSVERSIONS.windows); do \
 			BASEIMAGE=mcr.microsoft.com/windows/nanoserver:$${osversion}; \
 			full_version=`docker manifest inspect $${BASEIMAGE} | jq -r '.manifests[0].platform["os.version"]'`; \
-			sed -i -r "s/(\"os\"\:\"windows\")/\0,\"os.version\":\"$${full_version}\"/" "${HOME}/.docker/manifests/$${manifest_image_folder}/$${manifest_image_folder}-windows-$${osversion}-$${arch}"; \
+			docker manifest annotate --os windows --arch $${arch} --os-version $${full_version} $(IMAGE_TAG) $(IMAGE_TAG)-windows-$${osversion}-$${arch}; \
 		done; \
 	done
 	docker manifest push --purge $(IMAGE_TAG)
 ifdef PUBLISH
 	docker manifest create $(IMAGE_TAG_LATEST) $(foreach osarch, $(ALL_OS_ARCH), $(IMAGE_TAG)-${osarch})
+	set -x; \
+	for arch in $(ALL_ARCH.windows); do \
+		for osversion in $(ALL_OSVERSIONS.windows); do \
+			BASEIMAGE=mcr.microsoft.com/windows/nanoserver:$${osversion}; \
+			full_version=`docker manifest inspect $${BASEIMAGE} | jq -r '.manifests[0].platform["os.version"]'`; \
+			docker manifest annotate --os windows --arch $${arch} --os-version $${full_version} $(IMAGE_TAG_LATEST) $(IMAGE_TAG)-windows-$${osversion}-$${arch}; \
+		done; \
+	done
 	docker manifest inspect $(IMAGE_TAG_LATEST)
 endif
 

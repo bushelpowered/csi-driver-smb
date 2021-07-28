@@ -3,6 +3,10 @@
 ## Prerequisites
  - [install Helm](https://helm.sh/docs/intro/quickstart/#install-helm)
 
+### Tips
+ - make controller only run on master node: `--set controller.runOnMaster=true`
+ - set replica of controller as `1`: `--set controller.replicas=1`
+
 ## install latest version
 ```console
 helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
@@ -12,7 +16,14 @@ helm install csi-driver-smb csi-driver-smb/csi-driver-smb --namespace kube-syste
 ### install a specific version
 ```console
 helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-helm install csi-driver-smb csi-driver-smb/csi-driver-smb --namespace kube-system --version v1.0.0
+helm install csi-driver-smb csi-driver-smb/csi-driver-smb --namespace kube-system --version v1.2.0
+```
+
+### install driver with customized driver name, deployment name
+> only supported from `v1.2.0`+
+ - following example would install a driver with name `smb2`
+```console
+helm install csi-driver-smb2 csi-driver-smb/csi-driver-smb --namespace kube-system --set driver.name="smb2.csi.k8s.io" --set controller.name="csi-smb2-controller" --set rbac.name=smb2 --set serviceAccount.controller=csi-smb2-controller-sa --set serviceAccount.node=csi-smb2-node-sa --set node.name=csi-smb2-node --set node.livenessProbe.healthPort=39643
 ```
 
 ### search for all available chart versions
@@ -46,14 +57,19 @@ The following table lists the configurable parameters of the latest SMB CSI Driv
 | `imagePullSecrets`                                | Specify docker-registry secret names as an array           | [] (does not add image pull secrets to deployed pods)             |
 | `serviceAccount.create`                           | whether create service account of csi-smb-controller       | true                                                              |
 | `rbac.create`                                     | whether create rbac of csi-smb-controller                  | true                                                              |
+| `rbac.name`                                       | driver name in rbac role                | true                                                         |
+| `controller.name`                                 | name of driver deployment               | `csi-smb-controller`
 | `controller.replicas`                             | the replicas of csi-smb-controller                                  | 2                                                   |
 | `controller.metricsPort`                          | metrics port of csi-smb-controller                   |29644                                               |
+| `controller.livenessProbe.healthPort `            | health check port for liveness probe                   | `29642` |
 | `controller.logLevel`                             | controller driver log level                                                          |`5`                                                           |
 | `node.metricsPort`                                | metrics port of csi-smb-node                         |29645
 | `node.logLevel`                                   | node driver log level                                                          |`5`                                                           |
 | `linux.enabled`                                   | whether enable linux feature                               | true                                                              |
+| `linux.dsName`                                    | name of driver daemonset on linux                             |`csi-smb-node`                                                         |
 | `linux.kubelet`                                   | configure kubelet directory path on Linux agent node node                  | `/var/lib/kubelet`                                                |
 | `windows.enabled`                                 | whether enable windows feature                             | false                                                             |
+| `windows.dsName`                                  | name of driver daemonset on windows                             |`csi-smb-node-win`                                                         |
 | `windows.kubelet`                                 | configure kubelet directory path on Windows agent node                | `'C:\var\lib\kubelet'`                                            |
 | `windows.image.livenessProbe.repository`          | windows liveness-probe docker image                        | mcr.microsoft.com/oss/kubernetes-csi/livenessprobe                |
 | `windows.image.livenessProbe.tag`                 | windows liveness-probe docker image tag                    | v2.3.0                                 |
@@ -62,7 +78,7 @@ The following table lists the configurable parameters of the latest SMB CSI Driv
 | `windows.image.nodeDriverRegistrar.tag`           | windows csi-node-driver-registrar docker image tag         | v2.2.0                                 |
 | `windows.image.nodeDriverRegistrar.pullPolicy`    | windows csi-node-driver-registrar image pull policy        | IfNotPresent                                                      |
 | `controller.runOnMaster`                          | run controller on master node                              | false                                                             |
-| `node.livenessProbe.healthPort `                  | the health check port for liveness probe                   | `29643` |
+| `node.livenessProbe.healthPort `                  | health check port for liveness probe                   | `29643` |
 | `controller.resources.csiProvisioner.limits.cpu`      | csi-provisioner cpu limits                            | 100m                                                           |
 | `controller.resources.csiProvisioner.limits.memory`   | csi-provisioner memory limits                         | 100Mi                                                          |
 | `controller.resources.csiProvisioner.requests.cpu`    | csi-provisioner cpu requests limits                   | 10m                                                            |
@@ -82,6 +98,8 @@ The following table lists the configurable parameters of the latest SMB CSI Driv
 | `controller.affinity`                                 | controller pod affinity                               | {}                                                             |
 | `controller.nodeSelector`                             | controller pod node selector                          | {}                                                             |
 | `controller.tolerations`                              | controller pod tolerations                            | []                                                             |
+| `node.metricsPort`                                    | metrics port of csi-smb-node                         |`29645`                                                        |
+| `node.livenessProbe.healthPort `                      | health check port for liveness probe                   | `29643` |
 | `node.resources.livenessProbe.limits.cpu`             | liveness-probe cpu limits                             | 100m                                                           |
 | `node.resources.livenessProbe.limits.memory`          | liveness-probe memory limits                          | 100Mi                                                          |
 | `node.resources.livenessProbe.requests.cpu`           | liveness-probe cpu requests limits                    | 10m                                                            |
@@ -96,7 +114,6 @@ The following table lists the configurable parameters of the latest SMB CSI Driv
 | `node.resources.smb.requests.memory`                 | smb-csi-driver memory requests limits                | 20Mi                                                           |
 | `node.affinity`                                       | node pod affinity                                     | {}                                                             |
 | `node.nodeSelector`                                   | node pod node selector                                | {}                                                             |
-| `node.tolerations`                                    | node pod tolerations                                  | []                                                             |
 | `podAnnotations`                                      | collection of annotations to add to all the pods      | {}                                                             |
 | `podLabels`                                           | collection of labels to add to all the pods           | {}                                                             |
 | `priorityClassName`                                   | priority class name to be added to pods               | system-cluster-critical                                        |

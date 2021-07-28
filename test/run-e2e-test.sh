@@ -17,6 +17,11 @@
 set -euo pipefail
 
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
+GCE_PROJECT=$(gcloud config get-value project)
+
+configure_docker() {
+    gcloud auth configure-docker
+}
 
 setup_e2e() {
     # If run in prow, need to use kubernetes_e2e.py to set up the project and kubernetes automatically.
@@ -27,6 +32,8 @@ setup_e2e() {
 }
 
 export TEST_WINDOWS=true
+export REGISTRY=gcr.io/$GCE_PROJECT
 
+configure_docker
 setup_e2e
 make -C $PROJECT_ROOT e2e-test
